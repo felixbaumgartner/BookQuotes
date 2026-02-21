@@ -35,7 +35,7 @@ router.post('/:workId/scrape', async (req: Request, res: Response) => {
     let bookRow = (await dbGet(
       'SELECT id FROM books WHERE goodreads_work_id = ? AND user_id = ?',
       [workId, userId]
-    )) as { id: number } | undefined;
+    )) as unknown as { id: number } | undefined;
 
     if (bookRow) {
       await dbRun(
