@@ -4,12 +4,6 @@ import * as cheerio from 'cheerio';
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-const SCRAPE_DELAY = parseInt(process.env.SCRAPE_DELAY_MS || '1500', 10);
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 export interface SearchResult {
   title: string;
   author: string;
@@ -160,75 +154,3 @@ export async function scrapeQuotesPage(
   return { quotes, totalPages };
 }
 
-export async function* scrapeAllQuotes(
-  workId: string
-): AsyncGenerator<
-  | { type: 'progress'; page: number; totalPages: number; quotesFound: number }
-  | { type: 'complete'; totalQuotes: number }
-  | { type: 'error'; message: string }
-> {
-  const MAX_PAGES = 20;
-  let totalQuotes = 0;
-  let currentPage = 1;
-  let totalPages = 1;
-
-  try {
-    // Fetch first page to determine total pages
-    const firstResult = await scrapeQuotesPage(workId, 1);
-    totalPages = Math.min(firstResult.totalPages, MAX_PAGES);
-    totalQuotes += firstResult.quotes.length;
-
-    yield {
-      type: 'progress',
-      page: 1,
-      totalPages,
-      quotesFound: totalQuotes,
-    };
-
-    // Yield quotes from first page (we'll collect them in the route handler)
-    for (const quote of firstResult.quotes) {
-      // These are stored by the caller
-    }
-
-    // Fetch remaining pages
-    for (currentPage = 2; currentPage <= totalPages; currentPage++) {
-      await delay(SCRAPE_DELAY);
-
-      try {
-        const result = await scrapeQuotesPage(workId, currentPage);
-        totalQuotes += result.quotes.length;
-
-        // Update total pages if needed (pagination might reveal more pages)
-        const newTotal = Math.min(result.totalPages, MAX_PAGES);
-        if (newTotal > totalPages) totalPages = newTotal;
-
-        yield {
-          type: 'progress',
-          page: currentPage,
-          totalPages,
-          quotesFound: totalQuotes,
-        };
-
-        if (result.quotes.length === 0) {
-          // No more quotes, stop early
-          break;
-        }
-      } catch (err) {
-        yield {
-          type: 'error',
-          message: `Failed to fetch page ${currentPage}: ${err instanceof Error ? err.message : 'Unknown error'}`,
-        };
-        // Continue with next page
-      }
-    }
-
-    yield { type: 'complete', totalQuotes };
-  } catch (err) {
-    yield {
-      type: 'error',
-      message: `Scraping failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
-    };
-  }
-}
-
-export { delay, SCRAPE_DELAY };

@@ -1,24 +1,18 @@
 import { useState, useCallback, useRef } from 'react';
 import { Book, Quote } from '../types';
 import QuoteCard from './QuoteCard';
+import { exportQuotesPdf } from '../utils/exportPdf';
 
 interface Props {
   book: Book;
   quotes: Quote[];
-  onSort: (sort: string) => void;
   onFilter: (search: string) => void;
   onBack: () => void;
 }
 
-export default function QuoteList({ book, quotes, onSort, onFilter, onBack }: Props) {
-  const [sortBy, setSortBy] = useState('page');
+export default function QuoteList({ book, quotes, onFilter, onBack }: Props) {
   const [filterText, setFilterText] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
-
-  const handleSort = (value: string) => {
-    setSortBy(value);
-    onSort(value === 'likes' ? 'likes' : 'page');
-  };
 
   const handleFilter = useCallback(
     (value: string) => {
@@ -79,28 +73,18 @@ export default function QuoteList({ book, quotes, onSort, onFilter, onBack }: Pr
             className="w-full pl-9 pr-4 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-charcoal placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
           />
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => handleSort('page')}
-            className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-              sortBy === 'page'
-                ? 'bg-accent text-white'
-                : 'bg-white border border-stone-200 text-charcoal-light hover:border-accent/50'
-            }`}
-          >
-            By Page
-          </button>
-          <button
-            onClick={() => handleSort('likes')}
-            className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-              sortBy === 'likes'
-                ? 'bg-accent text-white'
-                : 'bg-white border border-stone-200 text-charcoal-light hover:border-accent/50'
-            }`}
-          >
-            Most Liked
-          </button>
-        </div>
+        <button
+          onClick={() => exportQuotesPdf(book, quotes)}
+          disabled={quotes.length === 0}
+          className="px-4 py-2.5 rounded-lg text-sm font-medium transition-colors bg-white border border-stone-200 text-charcoal-light hover:border-accent/50 hover:text-accent disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          Export PDF
+        </button>
       </div>
 
       {/* Quotes */}

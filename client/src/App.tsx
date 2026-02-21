@@ -1,4 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  SignedIn,
+  SignedOut,
+  SignInButton,
+  UserButton,
+  useAuth,
+} from '@clerk/clerk-react';
 import { Book, SearchResult, Quote, ScrapeProgress } from './types';
 import { getBooks, getQuotes, deleteBook, scrapeBook, searchBooks } from './api';
 import SearchBar from './components/SearchBar';
@@ -9,7 +16,8 @@ import ProgressIndicator from './components/ProgressIndicator';
 
 type View = 'home' | 'search-results' | 'scraping' | 'quotes';
 
-export default function App() {
+function AuthenticatedApp({ homeSignal }: { homeSignal: number }) {
+  const { getToken } = useAuth();
   const [view, setView] = useState<View>('home');
   const [savedBooks, setSavedBooks] = useState<Book[]>([]);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -22,12 +30,13 @@ export default function App() {
 
   const loadBooks = useCallback(async () => {
     try {
-      const books = await getBooks();
+      const token = await getToken();
+      const books = await getBooks(token);
       setSavedBooks(books);
     } catch {
       // Silently fail on initial load
     }
-  }, []);
+  }, [getToken]);
 
   useEffect(() => {
     loadBooks();
@@ -38,7 +47,8 @@ export default function App() {
     setSearchError('');
     setSearchResults([]);
     try {
-      const results = await searchBooks(query);
+      const token = await getToken();
+      const results = await searchBooks(query, token);
       setSearchResults(results);
       setView('search-results');
     } catch (err) {
@@ -48,27 +58,29 @@ export default function App() {
     }
   };
 
-  const handleSelectSearchResult = (result: SearchResult) => {
+  const handleSelectSearchResult = async (result: SearchResult) => {
     setView('scraping');
     setScrapeProgress(null);
     setScrapeError('');
 
+    const token = await getToken();
     scrapeBook(
       result.workId,
       result.title,
       result.author,
       result.coverImageUrl,
+      token,
       (progress) => {
         setScrapeProgress(progress);
       },
       async (complete) => {
-        // Scraping done — load the book and its quotes
+        const tk = await getToken();
         await loadBooks();
-        const allBooks = await getBooks();
+        const allBooks = await getBooks(tk);
         const book = allBooks.find((b) => b.id === complete.bookId);
         if (book) {
           setSelectedBook(book);
-          const q = await getQuotes(book.id);
+          const q = await getQuotes(book.id, 'likes', undefined, tk);
           setQuotes(q);
           setView('quotes');
         } else {
@@ -84,7 +96,8 @@ export default function App() {
   const handleSelectSavedBook = async (book: Book) => {
     setSelectedBook(book);
     try {
-      const q = await getQuotes(book.id);
+      const token = await getToken();
+      const q = await getQuotes(book.id, 'likes', undefined, token);
       setQuotes(q);
       setView('quotes');
     } catch {
@@ -94,7 +107,8 @@ export default function App() {
 
   const handleDeleteBook = async (bookId: number) => {
     try {
-      await deleteBook(bookId);
+      const token = await getToken();
+      await deleteBook(bookId, token);
       setSavedBooks((prev) => prev.filter((b) => b.id !== bookId));
       if (selectedBook?.id === bookId) {
         setSelectedBook(null);
@@ -106,43 +120,115 @@ export default function App() {
     }
   };
 
-  const handleSortQuotes = async (sort: string) => {
-    if (!selectedBook) return;
-    try {
-      const q = await getQuotes(selectedBook.id, sort);
-      setQuotes(q);
-    } catch {
-      // Handle error
-    }
-  };
-
   const handleFilterQuotes = async (search: string) => {
     if (!selectedBook) return;
     try {
-      const q = await getQuotes(selectedBook.id, undefined, search);
+      const token = await getToken();
+      const q = await getQuotes(selectedBook.id, undefined, search, token);
       setQuotes(q);
     } catch {
       // Handle error
     }
   };
 
-  const handleBackHome = () => {
+  const handleBackHome = useCallback(() => {
     setView('home');
     setSearchResults([]);
     setSearchError('');
     setScrapeProgress(null);
     setScrapeError('');
     loadBooks();
-  };
+  }, [loadBooks]);
+
+  // Push a history entry when leaving home, so browser back returns to home
+  const prevViewRef = useRef<View>('home');
+  useEffect(() => {
+    if (prevViewRef.current === 'home' && view !== 'home') {
+      window.history.pushState({ view }, '');
+    }
+    prevViewRef.current = view;
+  }, [view]);
+
+  // Listen for browser back button
+  useEffect(() => {
+    const onPopState = () => handleBackHome();
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [handleBackHome]);
+
+  // Listen for logo click from the header
+  useEffect(() => {
+    if (homeSignal > 0) handleBackHome();
+  }, [homeSignal, handleBackHome]);
+
+  return (
+    <>
+      <main className="max-w-5xl mx-auto px-4 py-8">
+        {(view === 'home' || view === 'search-results') && (
+          <div className="mb-8">
+            <SearchBar onSearch={handleSearch} isSearching={isSearching} />
+            {searchError && (
+              <p className="mt-2 text-red-600 text-sm">{searchError}</p>
+            )}
+          </div>
+        )}
+
+        {view === 'search-results' && searchResults.length > 0 && (
+          <BookSearchResults
+            results={searchResults}
+            onSelect={handleSelectSearchResult}
+          />
+        )}
+
+        {view === 'search-results' &&
+          !isSearching &&
+          searchResults.length === 0 &&
+          !searchError && (
+            <p className="text-center text-charcoal-light py-12">
+              No books found. Try a different search term.
+            </p>
+          )}
+
+        {view === 'scraping' && (
+          <ProgressIndicator
+            progress={scrapeProgress}
+            error={scrapeError}
+            onRetry={handleBackHome}
+          />
+        )}
+
+        {view === 'quotes' && selectedBook && (
+          <QuoteList
+            book={selectedBook}
+            quotes={quotes}
+            onFilter={handleFilterQuotes}
+            onBack={handleBackHome}
+          />
+        )}
+
+        {view === 'home' && (
+          <BookLibrary
+            books={savedBooks}
+            onSelectBook={handleSelectSavedBook}
+            onDeleteBook={handleDeleteBook}
+          />
+        )}
+      </main>
+    </>
+  );
+}
+
+export default function App() {
+  const [homeSignal, setHomeSignal] = useState(0);
 
   return (
     <div className="min-h-screen bg-cream">
       {/* Header */}
       <header className="border-b border-stone-200 bg-warm-white">
         <div className="max-w-5xl mx-auto px-4 py-5 flex items-center justify-between">
-          <button
-            onClick={handleBackHome}
-            className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+          <div
+            className="flex items-center gap-2 cursor-pointer"
+            onClick={() => setHomeSignal((s) => s + 1)}
           >
             <svg
               width="28"
@@ -160,75 +246,41 @@ export default function App() {
             <h1 className="font-display text-2xl font-semibold text-charcoal tracking-tight">
               BookQuotes
             </h1>
-          </button>
-          {view !== 'home' && view !== 'search-results' && (
-            <button
-              onClick={handleBackHome}
-              className="text-sm text-charcoal-light hover:text-charcoal transition-colors"
-            >
-              &larr; Back to Library
-            </button>
-          )}
+          </div>
+          <div className="flex items-center gap-3">
+            <SignedOut>
+              <SignInButton mode="modal">
+                <button className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:bg-accent-hover transition-colors">
+                  Sign In
+                </button>
+              </SignInButton>
+            </SignedOut>
+            <SignedIn>
+              <UserButton afterSignOutUrl="/" />
+            </SignedIn>
+          </div>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-8">
-        {/* Search Bar - always visible on home and search-results */}
-        {(view === 'home' || view === 'search-results') && (
-          <div className="mb-8">
-            <SearchBar onSearch={handleSearch} isSearching={isSearching} />
-            {searchError && (
-              <p className="mt-2 text-red-600 text-sm">{searchError}</p>
-            )}
-          </div>
-        )}
+      <SignedOut>
+        <main className="max-w-5xl mx-auto px-4 py-20 text-center">
+          <h2 className="font-display text-4xl font-semibold text-charcoal mb-4">
+            Discover Book Quotes
+          </h2>
+          <p className="text-charcoal-light text-lg mb-8 max-w-xl mx-auto">
+            Search any book, get the most loved quotes from Goodreads, and build your personal quote library.
+          </p>
+          <SignInButton mode="modal">
+            <button className="px-6 py-3 rounded-lg text-base font-medium bg-accent text-white hover:bg-accent-hover transition-colors">
+              Get Started
+            </button>
+          </SignInButton>
+        </main>
+      </SignedOut>
 
-        {/* Search Results */}
-        {view === 'search-results' && searchResults.length > 0 && (
-          <BookSearchResults
-            results={searchResults}
-            onSelect={handleSelectSearchResult}
-          />
-        )}
-
-        {view === 'search-results' &&
-          !isSearching &&
-          searchResults.length === 0 &&
-          !searchError && (
-            <p className="text-center text-charcoal-light py-12">
-              No books found. Try a different search term.
-            </p>
-          )}
-
-        {/* Scraping Progress */}
-        {view === 'scraping' && (
-          <ProgressIndicator
-            progress={scrapeProgress}
-            error={scrapeError}
-            onRetry={handleBackHome}
-          />
-        )}
-
-        {/* Quote View */}
-        {view === 'quotes' && selectedBook && (
-          <QuoteList
-            book={selectedBook}
-            quotes={quotes}
-            onSort={handleSortQuotes}
-            onFilter={handleFilterQuotes}
-            onBack={handleBackHome}
-          />
-        )}
-
-        {/* Saved Books Library */}
-        {view === 'home' && (
-          <BookLibrary
-            books={savedBooks}
-            onSelectBook={handleSelectSavedBook}
-            onDeleteBook={handleDeleteBook}
-          />
-        )}
-      </main>
+      <SignedIn>
+        <AuthenticatedApp homeSignal={homeSignal} />
+      </SignedIn>
     </div>
   );
 }

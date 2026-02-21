@@ -1,16 +1,19 @@
 import { Router, Request, Response } from 'express';
-import db from '../db';
+import { getAuth } from '@clerk/express';
+import { dbAll, dbGet, dbRun } from '../db';
 
 const router = Router();
 
-// GET /api/books - List all saved books
-router.get('/', (_req: Request, res: Response) => {
+// GET /api/books - List all saved books for the authenticated user
+router.get('/', async (req: Request, res: Response) => {
   try {
-    const books = db
-      .prepare(
-        'SELECT id, goodreads_work_id, title, author, cover_image_url, total_quotes, scraped_at FROM books ORDER BY scraped_at DESC'
-      )
-      .all();
+    const { userId } = getAuth(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const books = await dbAll(
+      'SELECT id, goodreads_work_id, title, author, cover_image_url, total_quotes, scraped_at FROM books WHERE user_id = ? ORDER BY scraped_at DESC',
+      [userId]
+    );
     res.json(books);
   } catch (err) {
     console.error('Error fetching books:', err);
@@ -19,13 +22,15 @@ router.get('/', (_req: Request, res: Response) => {
 });
 
 // GET /api/books/:id - Get book details
-router.get('/:id', (req: Request, res: Response) => {
+router.get('/:id', async (req: Request, res: Response) => {
   try {
-    const book = db
-      .prepare(
-        'SELECT id, goodreads_work_id, title, author, cover_image_url, total_quotes, scraped_at FROM books WHERE id = ?'
-      )
-      .get(req.params.id);
+    const { userId } = getAuth(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const book = await dbGet(
+      'SELECT id, goodreads_work_id, title, author, cover_image_url, total_quotes, scraped_at FROM books WHERE id = ? AND user_id = ?',
+      [req.params.id, userId]
+    );
 
     if (!book) {
       return res.status(404).json({ error: 'Book not found' });
@@ -39,8 +44,18 @@ router.get('/:id', (req: Request, res: Response) => {
 });
 
 // GET /api/books/:id/quotes - Get quotes for a book
-router.get('/:id/quotes', (req: Request, res: Response) => {
+router.get('/:id/quotes', async (req: Request, res: Response) => {
   try {
+    const { userId } = getAuth(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    // Verify book belongs to user
+    const book = await dbGet('SELECT id FROM books WHERE id = ? AND user_id = ?', [
+      parseInt(req.params.id, 10),
+      userId,
+    ]);
+    if (!book) return res.status(404).json({ error: 'Book not found' });
+
     const { sort, search } = req.query;
 
     let query = 'SELECT * FROM quotes WHERE book_id = ?';
@@ -57,7 +72,7 @@ router.get('/:id/quotes', (req: Request, res: Response) => {
       query += ' ORDER BY page_number ASC, id ASC';
     }
 
-    const quotes = db.prepare(query).all(...params);
+    const quotes = await dbAll(query, params);
     res.json(quotes);
   } catch (err) {
     console.error('Error fetching quotes:', err);
@@ -66,11 +81,15 @@ router.get('/:id/quotes', (req: Request, res: Response) => {
 });
 
 // DELETE /api/books/:id - Delete book and its quotes
-router.delete('/:id', (req: Request, res: Response) => {
+router.delete('/:id', async (req: Request, res: Response) => {
   try {
-    const result = db
-      .prepare('DELETE FROM books WHERE id = ?')
-      .run(req.params.id);
+    const { userId } = getAuth(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const result = await dbRun('DELETE FROM books WHERE id = ? AND user_id = ?', [
+      req.params.id,
+      userId,
+    ]);
 
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Book not found' });

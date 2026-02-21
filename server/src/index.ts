@@ -1,7 +1,8 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import { dbReady } from './db';
+import { clerkMiddleware } from '@clerk/express';
+import { initDb } from './db';
 import searchRouter from './routes/search';
 import booksRouter from './routes/books';
 import scrapeRouter from './routes/scrape';
@@ -11,6 +12,7 @@ const PORT = parseInt(process.env.SERVER_PORT || '3001', 10);
 
 app.use(cors());
 app.use(express.json());
+app.use(clerkMiddleware());
 
 // Routes
 app.use('/api/search', searchRouter);
@@ -22,12 +24,18 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
-// Wait for DB to initialize, then start
-dbReady.then(() => {
-  app.listen(PORT, () => {
-    console.log(`BookQuotes server running on http://localhost:${PORT}`);
-  });
-}).catch((err) => {
-  console.error('Failed to initialize database:', err);
-  process.exit(1);
-});
+// Initialize DB, then start server (only when run directly, not as serverless)
+if (process.env.VERCEL !== '1') {
+  initDb()
+    .then(() => {
+      app.listen(PORT, () => {
+        console.log(`BookQuotes server running on http://localhost:${PORT}`);
+      });
+    })
+    .catch((err) => {
+      console.error('Failed to initialize database:', err);
+      process.exit(1);
+    });
+}
+
+export default app;

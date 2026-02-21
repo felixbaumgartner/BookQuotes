@@ -2,8 +2,15 @@ import { SearchResult, Book, Quote } from './types';
 
 const API_BASE = '/api';
 
-export async function searchBooks(query: string): Promise<SearchResult[]> {
-  const res = await fetch(`${API_BASE}/search?q=${encodeURIComponent(query)}`);
+function authHeaders(token: string | null): Record<string, string> {
+  if (!token) return {};
+  return { Authorization: `Bearer ${token}` };
+}
+
+export async function searchBooks(query: string, token: string | null): Promise<SearchResult[]> {
+  const res = await fetch(`${API_BASE}/search?q=${encodeURIComponent(query)}`, {
+    headers: authHeaders(token),
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Search failed' }));
     throw new Error(err.error || 'Search failed');
@@ -11,14 +18,18 @@ export async function searchBooks(query: string): Promise<SearchResult[]> {
   return res.json();
 }
 
-export async function getBooks(): Promise<Book[]> {
-  const res = await fetch(`${API_BASE}/books`);
+export async function getBooks(token: string | null): Promise<Book[]> {
+  const res = await fetch(`${API_BASE}/books`, {
+    headers: authHeaders(token),
+  });
   if (!res.ok) throw new Error('Failed to fetch books');
   return res.json();
 }
 
-export async function getBook(id: number): Promise<Book> {
-  const res = await fetch(`${API_BASE}/books/${id}`);
+export async function getBook(id: number, token: string | null): Promise<Book> {
+  const res = await fetch(`${API_BASE}/books/${id}`, {
+    headers: authHeaders(token),
+  });
   if (!res.ok) throw new Error('Failed to fetch book');
   return res.json();
 }
@@ -26,21 +37,26 @@ export async function getBook(id: number): Promise<Book> {
 export async function getQuotes(
   bookId: number,
   sort?: string,
-  search?: string
+  search?: string,
+  token?: string | null
 ): Promise<Quote[]> {
   const params = new URLSearchParams();
   if (sort) params.set('sort', sort);
   if (search) params.set('search', search);
   const qs = params.toString();
   const res = await fetch(
-    `${API_BASE}/books/${bookId}/quotes${qs ? '?' + qs : ''}`
+    `${API_BASE}/books/${bookId}/quotes${qs ? '?' + qs : ''}`,
+    { headers: authHeaders(token || null) }
   );
   if (!res.ok) throw new Error('Failed to fetch quotes');
   return res.json();
 }
 
-export async function deleteBook(id: number): Promise<void> {
-  const res = await fetch(`${API_BASE}/books/${id}`, { method: 'DELETE' });
+export async function deleteBook(id: number, token: string | null): Promise<void> {
+  const res = await fetch(`${API_BASE}/books/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  });
   if (!res.ok) throw new Error('Failed to delete book');
 }
 
@@ -49,6 +65,7 @@ export function scrapeBook(
   title: string,
   author: string,
   coverImageUrl: string,
+  token: string | null,
   onProgress: (data: { page: number; totalPages: number; quotesFound: number; status: string }) => void,
   onComplete: (data: { bookId: number; totalQuotes: number }) => void,
   onError: (message: string) => void
@@ -57,7 +74,10 @@ export function scrapeBook(
 
   fetch(`${API_BASE}/books/${workId}/scrape`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(token),
+    },
     body: JSON.stringify({ title, author, coverImageUrl }),
     signal: controller.signal,
   })
