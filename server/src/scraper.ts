@@ -47,11 +47,11 @@ export async function searchBooks(query: string): Promise<SearchResult[]> {
     const title = titleEl.text().trim();
     const author = authorEl.text().trim();
     let coverImageUrl = imgEl.attr('src') || '';
-    const href = linkEl.attr('href') || '';
 
-    // Try to extract work ID from the link
-    // Links look like /book/show/12345.Title or /work/quotes/12345
-    const workIdMatch = href.match(/\/show\/(\d+)/);
+    // Extract the work ID from the editions link (e.g. /work/editions/220978092-title)
+    // This is different from the book ID in /book/show/214666632-title
+    const editionsLink = $el.find('a[href*="/work/editions/"]').attr('href') || '';
+    const workIdMatch = editionsLink.match(/\/work\/editions\/(\d+)/);
     const workId = workIdMatch ? workIdMatch[1] : '';
 
     // Upgrade to larger cover image

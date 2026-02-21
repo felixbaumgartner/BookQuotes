@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import { dbReady } from './db';
 import searchRouter from './routes/search';
 import booksRouter from './routes/books';
 import scrapeRouter from './routes/scrape';
@@ -21,6 +22,12 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.listen(PORT, () => {
-  console.log(`BookQuotes server running on http://localhost:${PORT}`);
+// Wait for DB to initialize, then start
+dbReady.then(() => {
+  app.listen(PORT, () => {
+    console.log(`BookQuotes server running on http://localhost:${PORT}`);
+  });
+}).catch((err) => {
+  console.error('Failed to initialize database:', err);
+  process.exit(1);
 });
