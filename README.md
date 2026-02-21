@@ -1,27 +1,111 @@
 # BookQuotes — Goodreads Book Quotes Scraper
 
-A single-page web application that lets you search for a book by name, scrapes all quotes for that book from Goodreads, stores them locally in SQLite, and displays them in a clean, browsable interface.
+A full-stack web application that lets you search for any book, scrapes the top 30 most-liked quotes from Goodreads, and saves them to your personal library. Each user gets their own collection via Clerk authentication, with data stored in a cloud Turso database.
 
 ## Tech Stack
 
 - **Frontend**: React 18 + TypeScript + Vite + Tailwind CSS
 - **Backend**: Node.js + Express + TypeScript
 - **Scraping**: Cheerio + Axios
-- **Storage**: SQLite via better-sqlite3
+- **Database**: [Turso](https://turso.tech) (cloud-hosted SQLite via `@libsql/client`)
+- **Authentication**: [Clerk](https://clerk.com) (Google sign-in)
+- **PDF Export**: jsPDF
+- **Deployment**: Vercel (serverless)
+
+## Features
+
+- Search Goodreads for books by title or author
+- Scrape the top 30 most-liked quotes with real-time progress via Server-Sent Events
+- Per-user book library — each account has its own saved books
+- Export quotes to a formatted PDF
+- Click-to-copy quotes to clipboard
+- Navigate home by clicking the BookQuotes logo or using the browser back button
+- Persistent cloud storage — your library is available across devices
+
+## Prerequisites
+
+- Node.js 18+
+- A [Turso](https://turso.tech) account (free tier)
+- A [Clerk](https://clerk.com) account (free tier)
+- (Optional) [Vercel](https://vercel.com) account for deployment
+
+## Account Setup
+
+### Turso (Database)
+
+1. Sign up at [turso.tech](https://turso.tech)
+2. Install the Turso CLI:
+   ```bash
+   npm install -g @turso/cli
+   ```
+3. Log in:
+   ```bash
+   turso auth login
+   ```
+4. Create a database:
+   ```bash
+   turso db create bookquotes
+   ```
+5. Get your database URL:
+   ```bash
+   turso db show bookquotes --url
+   ```
+   This gives you the `TURSO_DATABASE_URL` (e.g. `libsql://bookquotes-yourname.turso.io`)
+6. Create an auth token:
+   ```bash
+   turso db tokens create bookquotes
+   ```
+   This gives you the `TURSO_AUTH_TOKEN`
+
+### Clerk (Authentication)
+
+1. Sign up at [clerk.com](https://clerk.com)
+2. Create a new application in the Clerk dashboard
+3. Enable **Google** as a social login provider (under **User & Authentication > Social connections**)
+4. Go to **API Keys** in the dashboard to find:
+   - `CLERK_PUBLISHABLE_KEY` — starts with `pk_test_...`
+   - `CLERK_SECRET_KEY` — starts with `sk_test_...`
 
 ## Getting Started
 
-### Prerequisites
+### 1. Clone the repository
 
-- Node.js 18+
+```bash
+git clone https://github.com/felixbaumgartner/BookQuotes.git
+cd BookQuotes
+```
 
-### Install Dependencies
+### 2. Install dependencies
 
 ```bash
 npm run install:all
 ```
 
-### Start Development
+### 3. Configure environment variables
+
+Create `server/.env`:
+
+```env
+SERVER_PORT=3001
+
+# Turso Database
+TURSO_DATABASE_URL=libsql://your-db-name.turso.io
+TURSO_AUTH_TOKEN=your-turso-auth-token
+
+# Clerk Authentication
+CLERK_SECRET_KEY=sk_test_...
+CLERK_PUBLISHABLE_KEY=pk_test_...
+```
+
+Create `client/.env`:
+
+```env
+VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
+```
+
+A `.env.example` file is included in the repo for reference.
+
+### 4. Start development
 
 ```bash
 npm run dev
@@ -33,57 +117,57 @@ This starts both:
 
 The client proxies `/api` requests to the server in development.
 
-### Configuration
+## Deploying to Vercel
 
-Copy `.env.example` to `.env` in the root directory:
+1. Push your code to GitHub
+2. Import the repository in [Vercel](https://vercel.com)
+3. Set the following environment variables in the Vercel dashboard:
 
-```bash
-cp .env.example .env
-```
+   | Variable | Value |
+   |----------|-------|
+   | `TURSO_DATABASE_URL` | Your Turso database URL |
+   | `TURSO_AUTH_TOKEN` | Your Turso auth token |
+   | `CLERK_SECRET_KEY` | Your Clerk secret key |
+   | `CLERK_PUBLISHABLE_KEY` | Your Clerk publishable key |
+   | `VITE_CLERK_PUBLISHABLE_KEY` | Your Clerk publishable key (same as above) |
 
-Available settings:
-- `SERVER_PORT` — Express server port (default: 3001)
-- `CLIENT_PORT` — Vite dev server port (default: 5173)
-- `SCRAPE_DELAY_MS` — Delay between page requests in ms (default: 1500)
+4. Deploy. The `vercel.json` config handles build settings and API rewrites automatically.
 
 ## Project Structure
 
 ```
+├── api/                    # Vercel serverless entry point
+│   └── index.ts
 ├── client/                 # React frontend (Vite)
 │   ├── src/
 │   │   ├── components/     # React components
-│   │   ├── App.tsx         # Main application
-│   │   ├── api.ts          # API client
+│   │   ├── utils/          # Utilities (PDF export)
+│   │   ├── App.tsx         # Main application + auth guards
+│   │   ├── api.ts          # API client with auth headers
+│   │   ├── main.tsx        # Entry point with ClerkProvider
 │   │   ├── types.ts        # TypeScript types
 │   │   └── index.css       # Tailwind + custom styles
 │   └── index.html
 ├── server/                 # Express backend
 │   ├── src/
 │   │   ├── routes/         # API route handlers
-│   │   ├── db.ts           # SQLite database setup
+│   │   ├── db.ts           # Turso database setup
 │   │   ├── scraper.ts      # Goodreads scraping logic
-│   │   └── index.ts        # Express app entry
-│   └── data/               # SQLite database (auto-created)
-└── .env.example
+│   │   └── index.ts        # Express app + Clerk middleware
+├── vercel.json             # Vercel deployment config
+└── .env.example            # Environment variable template
 ```
 
 ## API Endpoints
 
+All `/api` routes require authentication (Clerk Bearer token).
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/search?q={query}` | Search Goodreads for books |
-| POST | `/api/books/:workId/scrape` | Start scraping quotes (SSE stream) |
-| GET | `/api/books` | List all saved books |
+| POST | `/api/books/:workId/scrape` | Scrape quotes for a book (SSE stream) |
+| GET | `/api/books` | List all saved books for the current user |
 | GET | `/api/books/:id` | Get book details |
 | GET | `/api/books/:id/quotes?sort=likes&search=keyword` | Get quotes for a book |
-| DELETE | `/api/books/:id` | Delete book and its quotes |
-
-## Features
-
-- Search Goodreads for books by title or author
-- Scrape all quotes with real-time progress via Server-Sent Events
-- Browse, search, and filter quotes
-- Sort quotes by most liked or page order
-- Click-to-copy quotes to clipboard
-- Persistent local storage with SQLite
-- Saved books library for quick access
+| DELETE | `/api/books/:id` | Delete a book and its quotes |
+| GET | `/api/health` | Health check (no auth required) |
