@@ -15,7 +15,7 @@ router.get('/', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Search error:', err);
     const message =
-      err instanceof Error ? err.message : 'Failed to search Goodreads';
+      err instanceof Error ? err.message : 'Search failed';
     res.status(502).json({ error: message });
   }
 });

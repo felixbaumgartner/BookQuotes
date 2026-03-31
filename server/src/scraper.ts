@@ -8,6 +8,7 @@ export interface SearchResult {
   title: string;
   author: string;
   coverImageUrl: string;
+  workId: string;
 }
 
 export interface ScrapedQuote {
@@ -18,21 +19,70 @@ export interface ScrapedQuote {
   pageNumber: number;
 }
 
-export async function searchBooks(query: string): Promise<SearchResult[]> {
+async function searchGoodreads(query: string): Promise<SearchResult[]> {
+  const url = `https://www.goodreads.com/search?q=${encodeURIComponent(query)}`;
+  const { data } = await axios.get(url, {
+    headers: { 'User-Agent': USER_AGENT },
+    timeout: 10000,
+  });
+
+  const $ = cheerio.load(data);
+  const results: SearchResult[] = [];
+
+  $('tr[itemtype="http://schema.org/Book"]').each((i, el) => {
+    if (results.length >= 10) return false;
+
+    const $el = $(el);
+    const title = $el.find('a.bookTitle span').text().trim();
+    const author = $el.find('a.authorName span').text().trim();
+    let coverImageUrl = $el.find('img.bookCover').attr('src') || '';
+
+    const editionsLink = $el.find('a[href*="/work/editions/"]').attr('href') || '';
+    const workIdMatch = editionsLink.match(/\/work\/editions\/(\d+)/);
+    const workId = workIdMatch ? workIdMatch[1] : '';
+
+    // Upgrade to larger cover image
+    if (coverImageUrl) {
+      coverImageUrl = coverImageUrl
+        .replace(/\._S[XY]\d+_/, '')
+        .replace(/\._(S[XY]\d+|CR\d+,\d+,\d+,\d+)_/, '');
+    }
+
+    if (title && workId) {
+      results.push({ title, author, coverImageUrl, workId });
+    }
+  });
+
+  return results;
+}
+
+async function searchOpenLibrary(query: string): Promise<SearchResult[]> {
   const url = `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=10&fields=title,author_name,cover_i`;
-  const { data } = await axios.get(url, { timeout: 10000 });
+  const { data } = await axios.get(url, { timeout: 30000 });
 
   if (!data.docs || !Array.isArray(data.docs)) return [];
 
   return data.docs
+    .filter((doc: { title?: string }) => doc.title)
     .map((doc: { title?: string; author_name?: string[]; cover_i?: number }) => ({
       title: doc.title || '',
       author: doc.author_name?.[0] || 'Unknown Author',
       coverImageUrl: doc.cover_i
         ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`
         : '',
-    }))
-    .filter((r: SearchResult) => r.title);
+      workId: '',
+    }));
+}
+
+export async function searchBooks(query: string): Promise<SearchResult[]> {
+  // Try Goodreads first (fast), fall back to Open Library if blocked
+  try {
+    const results = await searchGoodreads(query);
+    if (results.length > 0) return results;
+  } catch {
+    // Goodreads may block server IPs — fall back to Open Library
+  }
+  return searchOpenLibrary(query);
 }
 
 export async function findGoodreadsWorkId(title: string, author: string): Promise<string> {
@@ -43,7 +93,6 @@ export async function findGoodreadsWorkId(title: string, author: string): Promis
     timeout: 15000,
   });
 
-  // Search for workId patterns in the raw HTML
   const editionsMatch = data.match(/\/work\/editions\/(\d+)/);
   if (editionsMatch) return editionsMatch[1];
 

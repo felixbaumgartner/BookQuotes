@@ -5,11 +5,12 @@ import { scrapeQuotesPage, findGoodreadsWorkId } from '../scraper';
 
 const router = Router();
 
-// POST /api/books/scrape - Scrape top quotes for a book
-router.post('/scrape', async (req: Request, res: Response) => {
+// POST /api/books/:workId/scrape - Scrape top quotes for a book
+router.post('/:workId/scrape', async (req: Request, res: Response) => {
   const { userId } = getAuth(req);
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
+  let workId = req.params.workId;
   const { title, author, coverImageUrl } = req.body;
 
   if (!title || !author) {
@@ -29,15 +30,16 @@ router.post('/scrape', async (req: Request, res: Response) => {
   };
 
   try {
-    // Find the Goodreads work ID for this book
-    sendEvent('progress', {
-      page: 0,
-      totalPages: 1,
-      quotesFound: 0,
-      status: 'Finding book on Goodreads...',
-    });
-
-    const workId = await findGoodreadsWorkId(title, author);
+    // If workId is "lookup", find it from Goodreads
+    if (workId === 'lookup') {
+      sendEvent('progress', {
+        page: 0,
+        totalPages: 1,
+        quotesFound: 0,
+        status: 'Finding book on Goodreads...',
+      });
+      workId = await findGoodreadsWorkId(title, author);
+    }
 
     // Upsert book record
     const now = new Date().toISOString();

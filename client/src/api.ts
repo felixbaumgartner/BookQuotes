@@ -61,6 +61,7 @@ export async function deleteBook(id: number, token: string | null): Promise<void
 }
 
 export function scrapeBook(
+  workId: string,
   title: string,
   author: string,
   coverImageUrl: string,
@@ -71,7 +72,7 @@ export function scrapeBook(
 ): () => void {
   const controller = new AbortController();
 
-  fetch(`${API_BASE}/books/scrape`, {
+  fetch(`${API_BASE}/books/${workId}/scrape`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

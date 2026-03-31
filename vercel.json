@@ -3,6 +3,11 @@
   "outputDirectory": "client/dist",
   "installCommand": "npm install && cd server && npm install && cd ../client && npm install",
   "framework": null,
+  "functions": {
+    "api/**": {
+      "maxDuration": 60
+    }
+  },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api" }
   ]
