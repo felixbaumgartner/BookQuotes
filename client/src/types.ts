@@ -2,7 +2,6 @@ export interface SearchResult {
   title: string;
   author: string;
   coverImageUrl: string;
-  workId: string;
 }
 
 export interface Book {

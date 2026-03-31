@@ -65,7 +65,6 @@ function AuthenticatedApp({ homeSignal }: { homeSignal: number }) {
 
     const token = await getToken();
     scrapeBook(
-      result.workId,
       result.title,
       result.author,
       result.coverImageUrl,

@@ -8,7 +8,6 @@ export interface SearchResult {
   title: string;
   author: string;
   coverImageUrl: string;
-  workId: string;
 }
 
 export interface ScrapedQuote {
@@ -20,47 +19,38 @@ export interface ScrapedQuote {
 }
 
 export async function searchBooks(query: string): Promise<SearchResult[]> {
+  const url = `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=10&fields=title,author_name,cover_i`;
+  const { data } = await axios.get(url, { timeout: 10000 });
+
+  if (!data.docs || !Array.isArray(data.docs)) return [];
+
+  return data.docs
+    .map((doc: { title?: string; author_name?: string[]; cover_i?: number }) => ({
+      title: doc.title || '',
+      author: doc.author_name?.[0] || 'Unknown Author',
+      coverImageUrl: doc.cover_i
+        ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`
+        : '',
+    }))
+    .filter((r: SearchResult) => r.title);
+}
+
+export async function findGoodreadsWorkId(title: string, author: string): Promise<string> {
+  const query = `${title} ${author}`;
   const url = `https://www.goodreads.com/search?q=${encodeURIComponent(query)}`;
   const { data } = await axios.get(url, {
     headers: { 'User-Agent': USER_AGENT },
     timeout: 15000,
   });
 
-  const $ = cheerio.load(data);
-  const results: SearchResult[] = [];
+  // Search for workId patterns in the raw HTML
+  const editionsMatch = data.match(/\/work\/editions\/(\d+)/);
+  if (editionsMatch) return editionsMatch[1];
 
-  $('tr[itemtype="http://schema.org/Book"]').each((i, el) => {
-    if (results.length >= 10) return false;
+  const quotesMatch = data.match(/\/work\/quotes\/(\d+)/);
+  if (quotesMatch) return quotesMatch[1];
 
-    const $el = $(el);
-    const titleEl = $el.find('a.bookTitle span');
-    const authorEl = $el.find('a.authorName span');
-    const imgEl = $el.find('img.bookCover');
-    const linkEl = $el.find('a.bookTitle');
-
-    const title = titleEl.text().trim();
-    const author = authorEl.text().trim();
-    let coverImageUrl = imgEl.attr('src') || '';
-
-    // Extract the work ID from the editions link (e.g. /work/editions/220978092-title)
-    // This is different from the book ID in /book/show/214666632-title
-    const editionsLink = $el.find('a[href*="/work/editions/"]').attr('href') || '';
-    const workIdMatch = editionsLink.match(/\/work\/editions\/(\d+)/);
-    const workId = workIdMatch ? workIdMatch[1] : '';
-
-    // Upgrade to larger cover image
-    if (coverImageUrl) {
-      coverImageUrl = coverImageUrl
-        .replace(/\._S[XY]\d+_/, '')
-        .replace(/\._(S[XY]\d+|CR\d+,\d+,\d+,\d+)_/, '');
-    }
-
-    if (title && workId) {
-      results.push({ title, author, coverImageUrl, workId });
-    }
-  });
-
-  return results;
+  throw new Error('Could not find this book on Goodreads. Try a different search term.');
 }
 
 export async function scrapeQuotesPage(

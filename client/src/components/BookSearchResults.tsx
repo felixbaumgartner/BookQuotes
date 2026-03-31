@@ -14,7 +14,7 @@ export default function BookSearchResults({ results, onSelect }: Props) {
       <div className="space-y-3">
         {results.map((result, i) => (
           <button
-            key={`${result.workId}-${i}`}
+            key={`${result.title}-${result.author}-${i}`}
             onClick={() => onSelect(result)}
             className="w-full flex items-center gap-4 p-4 bg-white border border-stone-200 rounded-xl hover:border-accent/50 hover:shadow-md transition-all text-left animate-fade-in"
             style={{ animationDelay: `${i * 0.05}s`, opacity: 0 }}
